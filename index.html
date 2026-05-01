@@ -25,7 +25,9 @@
                             ferias: '#F59E0B',
                             medico: '#EF4444',
                             feriado: '#8B5CF6',
-                            ponte: '#000000'
+                            ponte: '#000000',
+                            extra: '#ec4899',
+                            banco: '#6366f1'
                         }
                     }
                 }
@@ -45,8 +47,6 @@
         .locked-day { background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.02) 10px, rgba(0,0,0,0.02) 20px); }
         .animate-fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .mini-day { aspect-ratio: 1/1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.6rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
-        .mini-day:hover { transform: scale(1.1); z-index: 10; border-color: rgba(0,0,0,0.1); }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
@@ -55,9 +55,11 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo } = React;
         const DOMAIN = "@namancapital.com.br";
         
+        const DEFAULT_TEAMS = ["TI", "Comercial", "Financeiro", "RH", "Diretoria"];
+
         const STATUS_OPTIONS = {
             PRESENCIAL: { id: 'presencial', label: 'Presencial', color: 'bg-status-presencial' },
             HOME_OFFICE: { id: 'home', label: 'Home Office', color: 'bg-status-home' },
@@ -65,7 +67,8 @@
             ATESTADO: { id: 'medico', label: 'Atestado Médico', color: 'bg-status-medico' },
             FERIADO: { id: 'feriado', label: 'Feriado', color: 'bg-status-feriado' },
             PONTE: { id: 'ponte', label: 'Ponte/Compensação', color: 'bg-status-ponte' },
-            HORA_EXTRA: { id: 'hora_extra', label: 'Hora_Extra', color: 'bg-status-extra' }
+            HORA_EXTRA: { id: 'extra', label: 'Hora Extra', color: 'bg-status-extra' },
+            BANCO_HORAS: { id: 'banco', label: 'Banco de Horas', color: 'bg-status-banco' }
         };
 
         const FIXED_DATES = {
@@ -85,286 +88,294 @@
             '2026-12-31': { status: 'ponte', label: 'Véspera de Ano Novo' }
         };
 
-        const DEFAULT_USERS = [
-            { email: `admin${DOMAIN}`, password: '123', role: 'ADMIN', name: 'Administrador Sistema', team: 'Diretoria' },
-            { email: `gestor${DOMAIN}`, password: '123', role: 'GESTOR', name: 'Gestor TI', team: 'TI' },
-            { email: `user${DOMAIN}`, password: '123', role: 'COLABORADOR', name: 'Dev Junior', team: 'TI' }
+        const INITIAL_USERS = [
+            { email: `admin${DOMAIN}`, password: '#Calipe30', role: 'ADMIN', name: 'Administrador Naman', team: 'Diretoria', adjustment: 0, needsPasswordChange: false },
+            { email: `gestor${DOMAIN}`, password: '123', role: 'GESTOR', name: 'Gestor Naman', team: 'TI', adjustment: 0, needsPasswordChange: true },
+            { email: `user${DOMAIN}`, password: '123', role: 'COLABORADOR', name: 'Colaborador Teste', team: 'TI', adjustment: 0, needsPasswordChange: true }
         ];
 
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
             const [users, setUsers] = useState([]);
+            const [teams, setTeams] = useState([]);
             const [events, setEvents] = useState([]);
             const [activeTab, setActiveTab] = useState('CALENDAR');
-            const [showChangePassword, setShowChangePassword] = useState(false);
+            const [isChangingPassword, setIsChangingPassword] = useState(false);
+            
+            const [filterUser, setFilterUser] = useState('');
+            const [viewMode, setViewMode] = useState('TEAM'); 
 
             useEffect(() => {
-                const storedUsers = JSON.parse(localStorage.getItem('naman_users'));
-                const finalUsers = (storedUsers && storedUsers.length > 0) ? storedUsers : DEFAULT_USERS;
-                setUsers(finalUsers);
+                const savedUsers = JSON.parse(localStorage.getItem('naman_users_v3'));
+                const savedTeams = JSON.parse(localStorage.getItem('naman_teams_v3'));
+                const savedEvents = JSON.parse(localStorage.getItem('naman_events_v3'));
                 
-                const storedEvents = JSON.parse(localStorage.getItem('naman_events')) || [];
-                setEvents(storedEvents);
-                
-                const sessionUser = JSON.parse(localStorage.getItem('naman_session'));
-                if (sessionUser) {
-                    const freshUser = finalUsers.find(u => u.email === sessionUser.email);
-                    if (freshUser) {
-                        setCurrentUser(freshUser);
-                        if (freshUser.password === '123') setShowChangePassword(true);
-                    }
+                setUsers(savedUsers && savedUsers.length > 0 ? savedUsers : INITIAL_USERS);
+                setTeams(savedTeams && savedTeams.length > 0 ? savedTeams : DEFAULT_TEAMS);
+                setEvents(savedEvents || []);
+
+                const session = JSON.parse(localStorage.getItem('naman_session_v3'));
+                if (session) {
+                    setCurrentUser(session);
+                    setFilterUser(session.email);
+                    if (session.needsPasswordChange) setIsChangingPassword(true);
                 }
             }, []);
 
-            useEffect(() => { if (users.length > 0) localStorage.setItem('naman_users', JSON.stringify(users)); }, [users]);
-            useEffect(() => { localStorage.setItem('naman_events', JSON.stringify(events)); }, [events]);
+            useEffect(() => {
+                if (users.length > 0) localStorage.setItem('naman_users_v3', JSON.stringify(users));
+                if (teams.length > 0) localStorage.setItem('naman_teams_v3', JSON.stringify(teams));
+                localStorage.setItem('naman_events_v3', JSON.stringify(events));
+            }, [users, teams, events]);
 
             const handleLogin = (user) => {
                 setCurrentUser(user);
-                localStorage.setItem('naman_session', JSON.stringify(user));
-                if (user.password === '123') setShowChangePassword(true);
+                setFilterUser(user.email);
+                localStorage.setItem('naman_session_v3', JSON.stringify(user));
+                localStorage.setItem('naman_last_email', user.email);
+                if (user.needsPasswordChange) setIsChangingPassword(true);
             };
 
             const handleLogout = () => {
                 setCurrentUser(null);
-                setActiveTab('CALENDAR');
-                setShowChangePassword(false);
-                localStorage.removeItem('naman_session');
+                localStorage.removeItem('naman_session_v3');
+                setIsChangingPassword(false);
             };
 
-            const handleUpdatePassword = (newPassword) => {
-                const updatedUsers = users.map(u => u.email === currentUser.email ? { ...u, password: newPassword } : u);
+            const handlePasswordChange = (newPassword) => {
+                const updatedUsers = users.map(u => 
+                    u.email === currentUser.email ? { ...u, password: newPassword, needsPasswordChange: false } : u
+                );
                 setUsers(updatedUsers);
-                const updatedMe = { ...currentUser, password: newPassword };
-                setCurrentUser(updatedMe);
-                localStorage.setItem('naman_session', JSON.stringify(updatedMe));
-                setShowChangePassword(false);
+                
+                const updatedSession = { ...currentUser, password: newPassword, needsPasswordChange: false };
+                setCurrentUser(updatedSession);
+                localStorage.setItem('naman_session_v3', JSON.stringify(updatedSession));
+                setIsChangingPassword(false);
             };
 
-            const handleBulkEventsImport = (newEvents, discoveredUsers) => {
-                if (discoveredUsers.length > 0) {
-                    setUsers(prev => {
-                        const existing = new Set(prev.map(u => u.email.toLowerCase()));
-                        const toAdd = discoveredUsers.filter(u => !existing.has(u.email.toLowerCase()));
-                        return [...prev, ...toAdd];
-                    });
-                }
-
-                setEvents(prev => {
-                    const updated = [...prev];
-                    newEvents.forEach(item => {
-                        const idx = updated.findIndex(e => e.date === item.date && e.email.toLowerCase() === item.email.toLowerCase());
-                        if (idx > -1) updated[idx] = item;
-                        else updated.push(item);
-                    });
-                    return [...updated];
+            const calculateBalance = (email) => {
+                const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+                let balance = parseFloat(user?.adjustment || 0);
+                
+                Object.keys(FIXED_DATES).forEach(date => {
+                    if (FIXED_DATES[date].status === 'ponte') balance -= 8;
                 });
+
+                const userEvents = events.filter(e => e.email.toLowerCase() === email.toLowerCase());
+                userEvents.forEach(ev => {
+                    if (ev.status === 'extra') balance += parseFloat(ev.hours || 0);
+                    if (ev.status === 'banco') balance -= 8;
+                    if (ev.status === 'ponte' && !FIXED_DATES[ev.date]) balance -= 8;
+                });
+                return balance;
             };
+
+            const statsDisplay = useMemo(() => {
+                if (!currentUser || currentUser.role === 'COLABORADOR') return null;
+                
+                if (viewMode === 'INDIVIDUAL') {
+                    const targetUser = users.find(u => u.email === filterUser);
+                    return {
+                        label: `Saldo: ${targetUser?.name.split(' ')[0] || 'Usuário'}`,
+                        total: calculateBalance(filterUser),
+                        count: 1
+                    };
+                } else {
+                    const relevantUsers = users.filter(u => currentUser.role === 'ADMIN' || u.team === currentUser.team);
+                    const total = relevantUsers.reduce((acc, u) => acc + calculateBalance(u.email), 0);
+                    return { 
+                        label: currentUser.role === 'ADMIN' ? "Total Empresa" : `Equipe ${currentUser.team}`,
+                        total, 
+                        count: relevantUsers.length 
+                    };
+                }
+            }, [users, events, currentUser, filterUser, viewMode]);
 
             if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
-            if (showChangePassword) return <ChangePasswordScreen user={currentUser} onUpdate={handleUpdatePassword} onLogout={handleLogout} />;
 
             return (
                 <div className="min-h-screen flex flex-col bg-gray-50">
-                    <Navbar user={currentUser} onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab} />
-                    <main className="flex-grow container mx-auto px-4 py-8 max-w-7xl">
-                        {activeTab === 'CALENDAR' && <Calendar user={currentUser} events={events} onAddEvent={(date, status, email) => setEvents(prev => {
-                            const filtered = prev.filter(e => !(e.date === date && e.email === email));
-                            return status ? [...filtered, { date, status, email }] : filtered;
-                        })} users={users} />}
-                        {activeTab === 'YEAR_VIEW' && <YearlyView user={currentUser} events={events} users={users} />}
-                        {activeTab === 'USERS' && <UserManagement currentUser={currentUser} users={users} 
-                            onAddUser={u => setUsers(p => [...p, u])} 
-                            onUpdateUser={(email, upds) => setUsers(p => p.map(u => u.email === email ? {...u, ...upds} : u))} 
-                            onRemoveUser={email => { setUsers(p => p.filter(u => u.email !== email)); setEvents(p => p.filter(e => e.email !== email)); }} 
-                            onImportEvents={handleBulkEventsImport} 
-                        />}
-                    </main>
+                    <Navbar 
+                        user={currentUser} 
+                        onLogout={handleLogout} 
+                        activeTab={activeTab} 
+                        onTabChange={setActiveTab} 
+                        stats={statsDisplay}
+                        viewMode={viewMode}
+                        setViewMode={setViewMode}
+                    />
+                    
+                    {isChangingPassword ? (
+                        <PasswordChangeModal onSubmit={handlePasswordChange} />
+                    ) : (
+                        <main className="flex-grow container mx-auto px-4 py-6">
+                            {activeTab === 'CALENDAR' ? (
+                                <Calendar 
+                                    user={currentUser} 
+                                    events={events} 
+                                    users={users}
+                                    filterUser={filterUser}
+                                    setFilterUser={setFilterUser}
+                                    onSaveEvent={(date, status, email, hours) => {
+                                        setEvents(prev => {
+                                            const filtered = prev.filter(e => !(e.date === date && e.email === email));
+                                            return status ? [...filtered, { date, status, email, hours }] : filtered;
+                                        });
+                                    }}
+                                />
+                            ) : (
+                                <ManagerView 
+                                    currentUser={currentUser} 
+                                    users={users} 
+                                    setUsers={setUsers} 
+                                    teams={teams}
+                                    setTeams={setTeams}
+                                    calculateBalance={calculateBalance}
+                                />
+                            )}
+                        </main>
+                    )}
                 </div>
             );
         }
 
         function LoginScreen({ onLogin, users }) {
-            const [email, setEmail] = useState('');
+            const [email, setEmail] = useState(localStorage.getItem('naman_last_email') || '');
             const [password, setPassword] = useState('');
-            const [error, setError] = useState('');
-
-            const suggestion = useMemo(() => {
-                if (!email || email.includes('@')) return '';
-                return DOMAIN;
-            }, [email]);
-
-            const handleKeyDown = (e) => {
-                if (e.key === 'Tab' && suggestion) {
-                    e.preventDefault();
-                    setEmail(email + suggestion);
-                }
-            };
+            const [err, setErr] = useState('');
 
             return (
                 <div className="min-h-screen flex items-center justify-center login-bg-animated p-4">
-                    <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in">
-                        <div className="p-10 text-center">
-                            <h1 className="text-4xl font-light tracking-[0.25em] text-brand-dark mb-1">NAMAN</h1>
-                            <p className="text-blue-600 text-[10px] uppercase tracking-[0.4em] font-black mb-10">CAPITAL</p>
-                            <form onSubmit={e => {
-                                e.preventDefault();
-                                const u = users.find(usr => usr.email.toLowerCase() === email.toLowerCase());
-                                if (!u || password !== u.password) return setError('Credenciais inválidas.');
-                                onLogin(u);
-                            }} className="space-y-6 text-left">
-                                <div className="relative">
-                                    <input 
-                                        type="text" 
-                                        className="w-full px-4 py-3 border-b-2 border-gray-100 outline-none text-sm bg-transparent relative z-10" 
-                                        placeholder="E-mail Corporativo" 
-                                        value={email} 
-                                        onKeyDown={handleKeyDown}
-                                        onChange={e => setEmail(e.target.value)} 
-                                        required 
-                                    />
-                                    {suggestion && (
-                                        <div 
-                                            className="absolute left-4 top-3 text-sm text-gray-300 pointer-events-none z-0"
-                                            style={{ paddingLeft: `${email.length}ch` }}
-                                        >
-                                            {suggestion}
-                                            <span className="ml-2 text-[8px] bg-gray-100 px-1 rounded text-gray-400">TAB</span>
-                                        </div>
-                                    )}
+                    <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl w-full max-w-md p-10 animate-fade-in">
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl font-light tracking-[0.25em] text-brand-dark mb-1 uppercase">Naman</h1>
+                            <p className="text-blue-600 text-[10px] uppercase tracking-[0.4em] font-black">Capital</p>
+                        </div>
+                        <form onSubmit={e => {
+                            e.preventDefault();
+                            const u = users.find(usr => usr.email.toLowerCase() === email.toLowerCase() && usr.password === password);
+                            if (u) onLogin(u); else setErr('Credenciais Inválidas');
+                        }} className="space-y-5">
+                            <div className="relative">
+                                <label className="text-[8px] font-black text-blue-600 uppercase tracking-widest absolute -top-2 left-0">E-mail Corporativo</label>
+                                <input type="text" placeholder="exemplo@namancapital.com.br" value={email} onChange={e=>setEmail(e.target.value)} className="w-full px-0 py-3 border-b-2 border-gray-100 outline-none text-sm focus:border-brand-light transition-colors" required />
+                            </div>
+                            <div className="relative">
+                                <label className="text-[8px] font-black text-blue-600 uppercase tracking-widest absolute -top-2 left-0">Senha</label>
+                                <input type="password" placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} className="w-full px-0 py-3 border-b-2 border-gray-100 outline-none text-sm focus:border-brand-light transition-colors" required />
+                            </div>
+                            {err && <p className="text-red-500 text-[10px] font-black text-center uppercase tracking-tighter">{err}</p>}
+                            <button className="w-full bg-brand-dark text-white font-black py-4 rounded-2xl shadow-lg hover:bg-brand-light transition-all uppercase tracking-widest text-xs">Acessar Calendário</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        function PasswordChangeModal({ onSubmit }) {
+            const [pwd, setPwd] = useState('');
+            const [confirmPwd, setConfirmPwd] = useState('');
+            const [error, setError] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (pwd.length < 4) return setError('A senha deve ter no mínimo 4 caracteres');
+                if (pwd !== confirmPwd) return setError('As senhas não coincidem');
+                if (pwd === '123') return setError('Escolha uma senha diferente da padrão');
+                onSubmit(pwd);
+            };
+
+            return (
+                <div className="flex-grow flex items-center justify-center p-4 bg-gray-50">
+                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md p-10 border border-blue-100 animate-fade-in">
+                        <div className="mb-6 text-center">
+                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                            </div>
+                            <h2 className="text-xl font-bold text-brand-dark uppercase tracking-tight">Primeiro Acesso</h2>
+                            <p className="text-xs text-gray-400 mt-2">Para sua segurança, você deve cadastrar uma nova senha antes de continuar.</p>
+                        </div>
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            <div className="space-y-4">
+                                <input type="password" placeholder="Nova Senha" value={pwd} onChange={e=>setPwd(e.target.value)} className="w-full px-4 py-4 bg-gray-50 border-2 border-transparent focus:border-brand-light focus:bg-white rounded-2xl outline-none text-sm transition-all" required />
+                                <input type="password" placeholder="Confirme a Nova Senha" value={confirmPwd} onChange={e=>setConfirmPwd(e.target.value)} className="w-full px-4 py-4 bg-gray-50 border-2 border-transparent focus:border-brand-light focus:bg-white rounded-2xl outline-none text-sm transition-all" required />
+                            </div>
+                            {error && <p className="text-red-500 text-[10px] font-black uppercase text-center">{error}</p>}
+                            <button className="w-full bg-brand-dark text-white font-black py-4 rounded-2xl shadow-xl hover:bg-brand-light transition-all uppercase tracking-widest text-xs">Atualizar Senha</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        function Navbar({ user, onLogout, activeTab, onTabChange, stats, viewMode, setViewMode }) {
+            return (
+                <div className="bg-brand-dark text-white shadow-2xl sticky top-0 z-50">
+                    <nav className="h-16 flex items-center px-6 border-b border-white/5">
+                        <div className="flex items-center space-x-8 flex-1">
+                            <div className="flex flex-col"><span className="text-lg font-light tracking-widest leading-none">NAMAN</span><span className="text-[7px] font-black text-blue-400 tracking-widest">CAPITAL</span></div>
+                            <div className="flex space-x-2">
+                                <button onClick={() => !user.needsPasswordChange && onTabChange('CALENDAR')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${activeTab === 'CALENDAR' ? 'bg-brand-light' : 'hover:bg-white/5 disabled:opacity-30'}`} disabled={user.needsPasswordChange}>Calendário</button>
+                                {user.role !== 'COLABORADOR' && (
+                                    <button onClick={() => !user.needsPasswordChange && onTabChange('MANAGER')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${activeTab === 'MANAGER' ? 'bg-brand-light' : 'hover:bg-white/5 disabled:opacity-30'}`} disabled={user.needsPasswordChange}>Gestão</button>
+                                )}
+                            </div>
+                        </div>
+
+                        {stats && !user.needsPasswordChange && (
+                            <div className="hidden lg:flex items-center bg-white/5 p-1 rounded-xl border border-white/10 mr-8 animate-fade-in group">
+                                <div className="flex items-center px-3 py-1 space-x-1">
+                                    <button 
+                                        onClick={() => setViewMode('TEAM')}
+                                        className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${viewMode === 'TEAM' ? 'bg-brand-light text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                                    >
+                                        Time
+                                    </button>
+                                    <button 
+                                        onClick={() => setViewMode('INDIVIDUAL')}
+                                        className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${viewMode === 'INDIVIDUAL' ? 'bg-brand-light text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                                    >
+                                        Indiv.
+                                    </button>
                                 </div>
-                                <input type="password" className="w-full px-4 py-3 border-b-2 border-gray-100 outline-none text-sm" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} required />
-                                {error && <p className="text-red-500 text-[10px] font-black text-center uppercase">{error}</p>}
-                                <button type="submit" className="w-full bg-brand-dark text-white font-black py-4 rounded-2xl shadow-xl hover:bg-brand-light transition-all uppercase tracking-widest text-xs">Entrar</button>
-                            </form>
+                                <div className="h-8 w-px bg-white/10 mx-1"></div>
+                                <div className="px-4 py-1.5 flex items-center">
+                                    <div className="text-right mr-3">
+                                        <p className="text-[7px] font-black text-blue-300 uppercase leading-none mb-1 tracking-tighter">{stats.label}</p>
+                                        <p className="text-[10px] font-bold leading-none">{stats.count} {stats.count === 1 ? 'Perfil' : 'Membros'}</p>
+                                    </div>
+                                    <div className={`text-lg font-black ${stats.total >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {stats.total > 0 ? '+' : ''}{stats.total.toFixed(1)}h
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex items-center space-x-4">
+                            <div className="text-right hidden sm:block">
+                                <p className="text-[10px] font-black uppercase">{user.name}</p>
+                                <p className="text-[8px] text-blue-300 font-bold">{user.role} • {user.team}</p>
+                            </div>
+                            <button onClick={onLogout} className="text-red-400 hover:text-white hover:bg-red-500 p-2 rounded-lg text-[9px] font-black uppercase transition-all border border-red-500/20">Sair</button>
                         </div>
-                    </div>
+                    </nav>
                 </div>
             );
         }
 
-        function ChangePasswordScreen({ onUpdate, onLogout }) {
-            const [p, setP] = useState('');
-            const [p2, setP2] = useState('');
-            const [e, setE] = useState('');
-            return (
-                <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-10">
-                        <h2 className="text-2xl font-bold text-brand-dark text-center mb-6">Alteração Obrigatória</h2>
-                        <div className="space-y-6">
-                            <input type="password" placeholder="Nova Senha" value={p} onChange={v => setP(v.target.value)} className="w-full p-4 border rounded-xl" />
-                            <input type="password" placeholder="Confirmar" value={p2} onChange={v => setP2(v.target.value)} className="w-full p-4 border rounded-xl" />
-                            {e && <p className="text-red-500 text-[10px] font-black uppercase text-center">{e}</p>}
-                            <button onClick={() => { if(p.length < 4) return setE('Mínimo 4 caracteres'); if(p !== p2) return setE('Senhas não conferem'); onUpdate(p); }} className="w-full bg-brand-dark text-white font-black py-4 rounded-xl uppercase">Atualizar</button>
-                            <button onClick={onLogout} className="w-full text-gray-400 text-xs font-black uppercase">Sair</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function Navbar({ user, onLogout, activeTab, onTabChange }) {
-            return (
-                <nav className="bg-brand-dark text-white shadow-xl h-16 flex items-center px-6 sticky top-0 z-40">
-                    <div className="flex items-center flex-1 space-x-8">
-                        <div className="flex flex-col"><span className="text-xl font-light tracking-widest">NAMAN</span><span className="text-[8px] font-black text-blue-400">CAPITAL</span></div>
-                        <div className="flex space-x-2">
-                            <NavBtn active={activeTab === 'CALENDAR'} onClick={() => onTabChange('CALENDAR')}>Agenda</NavBtn>
-                            <NavBtn active={activeTab === 'YEAR_VIEW'} onClick={() => onTabChange('YEAR_VIEW')}>Anual</NavBtn>
-                            {user.role !== 'COLABORADOR' && <NavBtn active={activeTab === 'USERS'} onClick={() => onTabChange('USERS')}>Gestão</NavBtn>}
-                        </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                        <div className="text-right"><p className="text-[10px] font-black uppercase">{user.name}</p><p className="text-[8px] text-blue-300 font-bold">{user.role} | {user.team}</p></div>
-                        <button onClick={onLogout} className="p-2 bg-white/5 rounded-xl hover:bg-red-500/20 transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
-                    </div>
-                </nav>
-            );
-        }
-
-        const NavBtn = ({ active, children, onClick }) => (
-            <button onClick={onClick} className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-brand-light text-white' : 'text-blue-200 hover:text-white hover:bg-white/5'}`}>{children}</button>
-        );
-
-        function Calendar({ user, events, onAddEvent, users }) {
-            const [curr, setCurr] = useState(new Date());
-            const [view, setView] = useState(user.role === 'COLABORADOR' ? 'INDIVIDUAL' : 'GLOBAL');
-            const [selUser, setSelUser] = useState(user.email);
+        function Calendar({ user, events, users, filterUser, setFilterUser, onSaveEvent }) {
+            const [viewDate, setViewDate] = useState(new Date());
             const [modal, setModal] = useState(null);
 
-            const year = curr.getFullYear();
-            const month = curr.getMonth();
+            const year = viewDate.getFullYear();
+            const month = viewDate.getMonth();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const firstDay = new Date(year, month, 1).getDay();
-            const days = Array(firstDay).fill(null).concat([...Array(daysInMonth).keys()].map(i => i + 1));
+            const startDay = new Date(year, month, 1).getDay();
+            const calendarDays = [...Array(startDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
 
-            const visibleUsers = useMemo(() => {
-                if (user.role === 'ADMIN') return users;
-                if (user.role === 'GESTOR') return users.filter(u => u.team === user.team);
-                return users.filter(u => u.email === user.email);
-            }, [users, user]);
-
-            return (
-                <div className="animate-fade-in">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm">
-                            <button onClick={() => setCurr(new Date(year, month - 1, 1))} className="p-2 text-gray-400 hover:text-brand-dark transition-colors">❮</button>
-                            <h2 className="text-sm font-black uppercase tracking-widest w-48 text-center">{new Intl.DateTimeFormat('pt-BR', {month:'long', year:'numeric'}).format(curr)}</h2>
-                            <button onClick={() => setCurr(new Date(year, month + 1, 1))} className="p-2 text-gray-400 hover:text-brand-dark transition-colors">❯</button>
-                        </div>
-                        <div className="flex gap-2">
-                             {user.role !== 'COLABORADOR' && (
-                                <select value={view} onChange={e => setView(e.target.value)} className="text-[10px] font-black uppercase bg-white border px-3 py-2 rounded-xl focus:ring-2 ring-brand-light outline-none">
-                                    <option value="GLOBAL">Vista de Equipe</option>
-                                    <option value="INDIVIDUAL">Filtrar Usuário</option>
-                                </select>
-                             )}
-                             {view === 'INDIVIDUAL' && (
-                                <select value={selUser} onChange={e => setSelUser(e.target.value)} className="text-[10px] font-black uppercase bg-white border px-3 py-2 rounded-xl focus:ring-2 ring-brand-light outline-none">
-                                    {visibleUsers.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
-                                </select>
-                             )}
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-3xl shadow-xl overflow-hidden grid grid-cols-7 gap-px border bg-gray-100">
-                        {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => <div key={d} className="bg-gray-50 py-3 text-center text-[10px] font-black uppercase text-gray-400">{d}</div>)}
-                        {days.map((day, idx) => {
-                            const dateStr = day ? `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : null;
-                            const isWeekend = idx % 7 === 0 || idx % 7 === 6;
-                            const fixed = dateStr ? FIXED_DATES[dateStr] : null;
-                            const dayEvts = dateStr ? (view === 'GLOBAL' ? events.filter(e => e.date === dateStr && visibleUsers.some(vu => vu.email.toLowerCase() === e.email.toLowerCase())) : events.filter(e => e.date === dateStr && e.email.toLowerCase() === selUser.toLowerCase())) : [];
-
-                            return (
-                                <div key={idx} onClick={() => day && setModal({ date: dateStr })} className={`calendar-day-cell p-2 cursor-pointer hover:bg-blue-50/50 transition-colors ${isWeekend ? 'bg-gray-50/50' : 'bg-white'} ${fixed ? 'locked-day' : ''}`}>
-                                    {day && (
-                                        <>
-                                            <span className="text-[11px] font-black text-gray-400">{day}</span>
-                                            <div className="mt-1 space-y-1">
-                                                {fixed && <div className={`text-[7px] font-black uppercase p-1 rounded text-white ${fixed.status === 'feriado' ? 'bg-status-feriado' : 'bg-status-ponte'}`}>{fixed.label}</div>}
-                                                {dayEvts.map((ev, i) => {
-                                                    const st = Object.values(STATUS_OPTIONS).find(s => s.id === ev.status);
-                                                    const u = users.find(usr => usr.email.toLowerCase() === ev.email.toLowerCase());
-                                                    return (
-                                                        <div key={i} className={`text-[7px] font-black uppercase p-1 rounded text-white truncate shadow-sm ${st?.color || 'bg-gray-400'}`}>
-                                                            {view === 'GLOBAL' ? `${u?.name.split(' ')[0] || '?'}: ${st?.label}` : st?.label}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                    {modal && <EventModal date={modal.date} activeUser={user} targetEmail={view === 'INDIVIDUAL' ? selUser : user.email} allEvents={events} users={visibleUsers} onClose={() => setModal(null)} onSave={onAddEvent} fixedData={FIXED_DATES[modal.date]} />}
-                </div>
-            );
-        }
-
-        function YearlyView({ user, events, users }) {
-            const [sel, setSel] = useState(user.email);
             const visibleUsers = useMemo(() => {
                 if (user.role === 'ADMIN') return users;
                 if (user.role === 'GESTOR') return users.filter(u => u.team === user.team);
@@ -372,248 +383,273 @@
             }, [users, user]);
 
             return (
-                <div className="space-y-8 animate-fade-in">
-                    <div className="bg-white p-4 rounded-2xl shadow-sm flex justify-between items-center border">
-                        <select value={sel} onChange={e => setSel(e.target.value)} className="text-[10px] font-black uppercase p-2 border rounded-lg focus:ring-2 ring-brand-light outline-none">
-                            {visibleUsers.map(u => <option key={u.email} value={u.email}>{u.name} ({u.team})</option>)}
-                        </select>
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Resumo Anual 2026</span>
+                <div className="animate-fade-in">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                        <div className="flex items-center bg-white p-1 rounded-2xl shadow-sm border">
+                            <button onClick={() => setViewDate(new Date(year, month - 1, 1))} className="p-3 hover:bg-gray-100 rounded-xl transition-all">❮</button>
+                            <span className="px-6 text-sm font-black uppercase tracking-widest text-brand-dark min-w-[200px] text-center">
+                                {viewDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                            </span>
+                            <button onClick={() => setViewDate(new Date(year, month + 1, 1))} className="p-3 hover:bg-gray-100 rounded-xl transition-all">❯</button>
+                        </div>
+                        <div className="flex flex-col items-end">
+                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Visualizar Colaborador:</p>
+                            <select value={filterUser} onChange={e => setFilterUser(e.target.value)} className="bg-white border text-[10px] font-black uppercase px-4 py-3 rounded-xl outline-none focus:ring-2 ring-brand-light shadow-sm">
+                                {visibleUsers.map(u => <option key={u.email} value={u.email}>{u.name} ({u.team})</option>)}
+                            </select>
+                        </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {[...Array(12).keys()].map(m => {
-                            const first = new Date(2026, m, 1).getDay();
-                            const total = new Date(2026, m + 1, 0).getDate();
-                            const days = Array(first).fill(null).concat([...Array(total).keys()].map(i => i+1));
-                            return (
-                                <div key={m} className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-                                    <h4 className="text-center text-[10px] font-black uppercase mb-3 text-brand-dark">{new Intl.DateTimeFormat('pt-BR', {month:'long'}).format(new Date(2026, m, 1))}</h4>
-                                    <div className="grid grid-cols-7 gap-1">
-                                        {days.map((d, i) => {
-                                            if(!d) return <div key={i} />;
-                                            const fmt = `2026-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                                            const fix = FIXED_DATES[fmt];
-                                            const ev = events.find(e => e.date === fmt && e.email.toLowerCase() === sel.toLowerCase());
-                                            const st = Object.values(STATUS_OPTIONS).find(s => s.id === (ev?.status || fix?.status));
-                                            return <div key={i} className={`mini-day ${st ? `${st.color} text-white` : 'text-gray-300 bg-gray-50'}`}>{d}</div>
-                                        })}
+
+                    <div className="bg-white rounded-[32px] shadow-xl overflow-hidden border">
+                        <div className="grid grid-cols-7 bg-gray-50 border-b">
+                            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+                                <div key={d} className="py-4 text-center text-[10px] font-black uppercase text-gray-400 tracking-widest border-r last:border-0">{d}</div>
+                            ))}
+                        </div>
+                        <div className="grid grid-cols-7 gap-px bg-gray-100">
+                            {calendarDays.map((day, i) => {
+                                if (!day) return <div key={i} className="bg-gray-50/50 calendar-day-cell" />;
+                                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                const isWeekend = (i % 7 === 0 || i % 7 === 6);
+                                const holiday = FIXED_DATES[dateStr];
+                                const dayEvent = events.find(e => e.date === dateStr && e.email === filterUser);
+                                
+                                return (
+                                    <div key={i} 
+                                        onClick={() => {
+                                            if (user.role === 'ADMIN' || user.role === 'GESTOR' || filterUser === user.email) {
+                                                setModal({ date: dateStr });
+                                            }
+                                        }} 
+                                        className={`bg-white calendar-day-cell p-2 cursor-pointer hover:bg-blue-50 transition-all relative ${holiday ? 'locked-day' : ''} ${isWeekend ? 'bg-gray-50/30' : ''}`}
+                                    >
+                                        <span className={`text-[11px] font-black ${holiday ? 'text-brand-light' : isWeekend ? 'text-gray-300' : 'text-gray-400'}`}>{day}</span>
+                                        <div className="mt-2 space-y-1">
+                                            {holiday && <div className={`text-[7px] font-black uppercase px-1.5 py-1 rounded text-white ${holiday.status === 'feriado' ? 'bg-status-feriado' : 'bg-status-ponte'}`}>{holiday.label}</div>}
+                                            {dayEvent && <div className={`text-[7px] font-black uppercase px-1.5 py-1 rounded text-white shadow-sm ${STATUS_OPTIONS[dayEvent.status.toUpperCase()]?.color || 'bg-gray-400'}`}>{STATUS_OPTIONS[dayEvent.status.toUpperCase()]?.label} {dayEvent.hours ? `(${dayEvent.hours}h)` : ''}</div>}
+                                        </div>
                                     </div>
-                                </div>
-                            );
-                        })}
+                                );
+                            })}
+                        </div>
                     </div>
+
+                    {modal && <Modal date={modal.date} currentEmail={filterUser} onClose={() => setModal(null)} onSave={onSaveEvent} initialEvent={events.find(e => e.date === modal.date && e.email === filterUser)} holiday={FIXED_DATES[modal.date]} />}
                 </div>
             );
         }
 
-        function EventModal({ date, activeUser, targetEmail, allEvents, users, onClose, onSave, fixedData }) {
-            const myEv = allEvents.find(e => e.date === date && e.email.toLowerCase() === targetEmail.toLowerCase());
-            const [sel, setSel] = useState(myEv ? myEv.status : '');
-            const dayEvs = allEvents.filter(e => e.date === date && users.some(u => u.email.toLowerCase() === e.email.toLowerCase()));
+        function Modal({ date, currentEmail, onClose, onSave, initialEvent, holiday }) {
+            const [status, setStatus] = useState(initialEvent?.status || '');
+            const [hours, setHours] = useState(initialEvent?.hours || '');
+            const dateFmt = new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
             return (
-                <div className="fixed inset-0 bg-brand-dark/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in">
-                        <div className="bg-brand-dark p-6 text-white flex justify-between items-center">
-                            <div><h3 className="text-sm font-black uppercase tracking-widest">{date}</h3></div>
-                            <button onClick={onClose} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">✕</button>
+                <div className="fixed inset-0 bg-brand-dark/90 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl p-8 animate-fade-in">
+                        <div className="flex justify-between items-start mb-8">
+                            <div><h3 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Apontamento</h3><p className="text-xl font-bold text-brand-dark">{dateFmt}</p></div>
+                            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">✕</button>
                         </div>
-                        <div className="p-6 space-y-6">
-                            <div className="space-y-2">
-                                <h4 className="text-[10px] font-black text-gray-400 uppercase border-b pb-1">Marcação para: {targetEmail}</h4>
-                                {fixedData ? <div className="bg-gray-100 p-4 rounded-xl text-center font-bold text-gray-600">{fixedData.label}</div> : (
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {Object.values(STATUS_OPTIONS).filter(s => s.id !== 'feriado' && s.id !== 'ponte').map(s => (
-                                            <button key={s.id} onClick={() => setSel(s.id)} className={`p-3 rounded-xl border text-[9px] font-black uppercase transition-all shadow-sm ${sel === s.id ? `${s.color} text-white border-transparent` : 'bg-white text-gray-400 border-gray-100'}`}>{s.label}</button>
-                                        ))}
-                                        <button onClick={() => setSel('')} className="p-3 rounded-xl border text-[9px] font-black bg-red-50 text-red-400 uppercase border-red-100 shadow-sm">Limpar</button>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <h4 className="text-[10px] font-black text-gray-400 uppercase border-b pb-1">Presença da Equipe</h4>
-                                <div className="max-h-40 overflow-y-auto space-y-1">
-                                    {dayEvs.length === 0 && <p className="text-[10px] text-gray-300 italic p-2 text-center">Ninguém escalado.</p>}
-                                    {dayEvs.map((e, i) => {
-                                        const u = users.find(usr => usr.email.toLowerCase() === e.email.toLowerCase());
-                                        const st = Object.values(STATUS_OPTIONS).find(s => s.id === e.status);
-                                        return <div key={i} className="flex justify-between text-[10px] bg-gray-50 p-2 rounded border border-gray-100"><strong>{u?.name || 'User'}</strong> <span className="uppercase font-black text-gray-400">{st?.label}</span></div>
-                                    })}
+                        {holiday ? (
+                            <div className="bg-blue-50 p-6 rounded-3xl text-center"><p className="font-bold text-brand-dark uppercase text-[10px] mb-2">Bloqueado para Edição</p><p className="font-bold text-brand-dark">{holiday.label}</p></div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {Object.values(STATUS_OPTIONS).filter(o => o.id !== 'feriado').map(opt => (
+                                        <button key={opt.id} onClick={() => setStatus(opt.id)} className={`p-3 rounded-2xl border-2 text-[9px] font-black uppercase transition-all ${status === opt.id ? 'border-brand-light bg-brand-light text-white shadow-lg' : 'border-gray-100 text-gray-400 hover:border-gray-200'}`}>{opt.label}</button>
+                                    ))}
                                 </div>
-                            </div>
-                        </div>
-                        <div className="p-6 bg-gray-50 border-t">
-                            {!fixedData && <button onClick={() => { onSave(date, sel, targetEmail); onClose(); }} className="w-full bg-brand-light text-white text-[10px] font-black uppercase py-4 rounded-2xl shadow-lg hover:bg-brand-dark transition-all">Salvar Marcação</button>}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function UserManagement({ currentUser, users, onAddUser, onUpdateUser, onRemoveUser, onImportEvents }) {
-            const [form, setForm] = useState({ email: '', name: '', team: '', role: 'COLABORADOR', password: '123' });
-            const [editingEmail, setEditingEmail] = useState(null);
-            const [editForm, setEditForm] = useState({});
-            const [msg, setMsg] = useState('');
-            const fileRef = useRef(null);
-
-            const isRestricted = (targetUser) => {
-                if (currentUser.role === 'ADMIN') return false;
-                if (currentUser.role === 'GESTOR') {
-                    return targetUser.role === 'ADMIN' || targetUser.team !== currentUser.team;
-                }
-                return true;
-            };
-
-            const startEdit = (u) => {
-                setEditingEmail(u.email);
-                setEditForm({ name: u.name, team: u.team, role: u.role });
-            };
-
-            const saveEdit = () => {
-                onUpdateUser(editingEmail, editForm);
-                setEditingEmail(null);
-                setMsg('Cadastro atualizado!');
-                setTimeout(() => setMsg(''), 2000);
-            };
-
-            const handleEventImport = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    const text = evt.target.result;
-                    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
-                    
-                    const newEvents = [];
-                    const discoveredUsers = [];
-
-                    lines.forEach((line) => {
-                        const parts = line.includes(';') ? line.split(';') : line.split(',');
-                        if (parts.length < 3) return;
-                        
-                        const dateRaw = parts[0].trim();
-                        const email = parts[1].trim();
-                        const status = parts[2].trim().toLowerCase();
-
-                        if (dateRaw.toLowerCase() === 'data' || email.toLowerCase() === 'email') return;
-
-                        if (dateRaw && email && status) {
-                            newEvents.push({ date: dateRaw, email, status });
-                            
-                            const exists = users.some(u => u.email.toLowerCase() === email.toLowerCase());
-                            const alreadyDiscovered = discoveredUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
-                            
-                            if (!exists && !alreadyDiscovered) {
-                                const namePart = email.split('@')[0].split('.').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-                                discoveredUsers.push({
-                                    email: email,
-                                    name: namePart,
-                                    team: 'Importado',
-                                    role: 'COLABORADOR',
-                                    password: '123'
-                                });
-                            }
-                        }
-                    });
-                    
-                    onImportEvents(newEvents, discoveredUsers);
-                    setMsg(`${newEvents.length} marcações processadas.`);
-                    setTimeout(() => setMsg(''), 3000);
-                };
-                reader.readAsText(file);
-            };
-
-            const filteredUsers = users.filter(u => !isRestricted(u) || u.email === currentUser.email);
-
-            return (
-                <div className="space-y-6 animate-fade-in pb-20">
-                    {msg && <div className="fixed top-20 right-4 bg-brand-dark text-white px-6 py-3 rounded-xl z-50 text-xs font-black uppercase shadow-2xl animate-bounce">{msg}</div>}
-                    
-                    <div className="bg-white rounded-3xl shadow-lg p-8 border">
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                            <h2 className="text-xl font-bold text-brand-dark">Gestão de Usuários e Escalas</h2>
-                            <div className="flex gap-2">
-                                <input type="file" ref={fileRef} onChange={handleEventImport} accept=".csv" className="hidden" />
-                                <button onClick={() => fileRef.current.click()} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-700 transition-colors shadow-sm">Importar Escala CSV</button>
-                                <button onClick={() => {
-                                    const csvData = "Data,Email,Status\n2026-04-27,patricia.lopes@namancapital.com.br,home\n2026-04-28,patricia.lopes@namancapital.com.br,presencial";
-                                    const blob = new Blob([csvData], { type: 'text/csv' });
-                                    const url = window.URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.setAttribute('hidden', ''); a.setAttribute('href', url); a.setAttribute('download', 'modelo_escala.csv');
-                                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                                }} className="bg-gray-100 text-gray-500 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-gray-200">Modelo CSV</button>
-                            </div>
-                        </div>
-
-                        {currentUser.role === 'ADMIN' && (
-                            <div className="bg-gray-50 p-6 rounded-2xl mb-8 border border-gray-100">
-                                <h3 className="text-xs font-black uppercase mb-4 text-gray-400 tracking-tighter">Novo Colaborador Manual</h3>
-                                <form className="grid grid-cols-1 md:grid-cols-5 gap-3" onSubmit={e => { e.preventDefault(); onAddUser({...form}); setForm({email:'', name:'', team:'', role:'COLABORADOR', password:'123'}); }}>
-                                    <input required placeholder="E-mail Corporativo" value={form.email} onChange={v => setForm({...form, email:v.target.value})} className="p-3 border rounded-xl text-xs bg-white focus:ring-2 ring-brand-light outline-none" />
-                                    <input required placeholder="Nome Completo" value={form.name} onChange={v => setForm({...form, name:v.target.value})} className="p-3 border rounded-xl text-xs bg-white focus:ring-2 ring-brand-light outline-none" />
-                                    <input required placeholder="Setor/Equipe" value={form.team} onChange={v => setForm({...form, team:v.target.value})} className="p-3 border rounded-xl text-xs bg-white focus:ring-2 ring-brand-light outline-none" />
-                                    <select value={form.role} onChange={v => setForm({...form, role:v.target.value})} className="p-3 border rounded-xl text-[10px] font-black uppercase bg-white focus:ring-2 ring-brand-light outline-none">
-                                        <option value="COLABORADOR">Colaborador</option>
-                                        <option value="GESTOR">Gestor</option>
-                                        <option value="ADMIN">Admin</option>
-                                    </select>
-                                    <button className="bg-brand-dark text-white rounded-xl text-[10px] font-black uppercase hover:bg-brand-light transition-all shadow-md">Adicionar</button>
-                                </form>
+                                {status === 'extra' && <input type="number" step="0.5" value={hours} onChange={e => setHours(e.target.value)} className="w-full border-2 border-gray-100 rounded-2xl px-6 py-4 outline-none focus:border-brand-light font-bold text-center" placeholder="Qtd horas extras" />}
+                                <div className="flex gap-3"><button onClick={() => { onSave(date, '', currentEmail); onClose(); }} className="flex-1 border-2 border-gray-100 py-4 rounded-2xl text-[10px] font-black uppercase text-gray-400">Remover</button><button onClick={() => { onSave(date, status, currentEmail, hours); onClose(); }} className="flex-[2] bg-brand-dark text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all">Salvar Apontamento</button></div>
                             </div>
                         )}
+                    </div>
+                </div>
+            );
+        }
 
-                        <div className="overflow-hidden rounded-2xl border bg-white">
-                            <table className="w-full text-left">
-                                <thead className="bg-gray-50 border-b text-[10px] font-black text-gray-400 uppercase tracking-widest"><tr className="text-left"><th className="px-6 py-4">Nome / E-mail</th><th className="px-6 py-4">Equipe</th><th className="px-6 py-4">Nível</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {filteredUsers.map(u => (
-                                        <tr key={u.email} className="hover:bg-gray-50/50 transition-colors">
-                                            <td className="px-6 py-4">
-                                                {editingEmail === u.email ? (
-                                                    <input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="p-2 border rounded-lg text-sm w-full focus:ring-2 ring-brand-light outline-none" />
-                                                ) : (
-                                                    <div><div className="font-bold text-sm text-brand-dark">{u.name}</div><div className="text-[10px] text-gray-400">{u.email}</div></div>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                {editingEmail === u.email ? (
-                                                    <input value={editForm.team} onChange={e => setEditForm({...editForm, team: e.target.value})} className="p-2 border rounded-lg text-sm w-full focus:ring-2 ring-brand-light outline-none" />
-                                                ) : (
-                                                    <span className="text-xs font-medium text-gray-600">{u.team}</span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                {editingEmail === u.email ? (
-                                                    <select value={editForm.role} onChange={e => setEditForm({...editForm, role: e.target.value})} className="p-2 border rounded-lg text-[10px] font-black uppercase focus:ring-2 ring-brand-light outline-none">
-                                                        <option value="COLABORADOR">Colaborador</option>
-                                                        <option value="GESTOR">Gestor</option>
-                                                        <option value="ADMIN">Admin</option>
-                                                    </select>
-                                                ) : (
-                                                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded shadow-sm ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-600' : (u.role === 'GESTOR' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500')}`}>{u.role}</span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4 text-right space-x-2">
-                                                {editingEmail === u.email ? (
-                                                    <>
-                                                        <button onClick={saveEdit} className="text-green-600 text-[9px] font-black uppercase hover:underline">Salvar</button>
-                                                        <button onClick={() => setEditingEmail(null)} className="text-gray-400 text-[9px] font-black uppercase hover:underline">Cancelar</button>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <button onClick={() => startEdit(u)} className="text-blue-500 text-[9px] font-black uppercase hover:underline">Editar</button>
-                                                        <button onClick={() => { onUpdateUser(u.email, {password:'123'}); setMsg(`Senha resetada!`); setTimeout(() => setMsg(''), 2000); }} className="text-gray-400 text-[9px] font-black uppercase hover:underline">Reset</button>
-                                                        {u.email !== currentUser.email && u.role !== 'ADMIN' && <button onClick={() => onRemoveUser(u.email)} className="text-red-400 text-[9px] font-black uppercase hover:underline">Excluir</button>}
-                                                    </>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
+        function ManagerView({ currentUser, users, setUsers, teams, setTeams, calculateBalance }) {
+            const [showUserForm, setShowUserForm] = useState(false);
+            const [showTeamForm, setShowTeamForm] = useState(false);
+            const [newUser, setNewUser] = useState({ name: '', email: '', role: 'COLABORADOR', team: currentUser.team });
+            const [newTeamName, setNewTeamName] = useState('');
+            const [msg, setMsg] = useState('');
+            const [teamFilter, setTeamFilter] = useState('ALL');
+
+            const handleAddUser = () => {
+                if (!newUser.name || !newUser.email) return setMsg('Preencha os campos!');
+                const emailFull = newUser.email.includes('@') ? newUser.email : newUser.email + DOMAIN;
+                setUsers(prev => [...prev, { ...newUser, email: emailFull, password: '123', adjustment: 0, needsPasswordChange: true }]);
+                setShowUserForm(false);
+                setNewUser({ name: '', email: '', role: 'COLABORADOR', team: currentUser.team });
+                setMsg('Usuário criado!');
+                setTimeout(() => setMsg(''), 3000);
+            };
+
+            const handleAddTeam = () => {
+                if (!newTeamName) return;
+                if (teams.some(t => t.toLowerCase() === newTeamName.toLowerCase())) return setMsg('Time já existe');
+                setTeams(prev => [...prev, newTeamName.trim()]);
+                setNewTeamName('');
+                setMsg('Time adicionado!');
+                setTimeout(() => setMsg(''), 3000);
+            };
+
+            const handleRemoveTeam = (teamToRemove) => {
+                if (DEFAULT_TEAMS.includes(teamToRemove)) return setMsg('Time padrão não pode ser removido');
+                if (users.some(u => u.team === teamToRemove)) return setMsg('Existe colaborador neste time');
+                setTeams(prev => prev.filter(t => t !== teamToRemove));
+            };
+
+            const handleRemoveUser = (email) => {
+                if (!confirm('Excluir este colaborador?')) return;
+                setUsers(prev => prev.filter(u => u.email !== email));
+            };
+
+            const handleUpdateUser = (email, data) => {
+                setUsers(prev => prev.map(u => u.email === email ? { ...u, ...data } : u));
+            };
+
+            const filteredUsers = users.filter(u => {
+                const isMyTeam = currentUser.role === 'ADMIN' || u.team === currentUser.team;
+                const matchesTeamFilter = teamFilter === 'ALL' || u.team === teamFilter;
+                return isMyTeam && matchesTeamFilter;
+            });
+
+            return (
+                <div className="space-y-6">
+                    {msg && <div className="fixed top-20 right-4 bg-brand-dark text-white px-6 py-3 rounded-xl shadow-2xl z-[200] animate-bounce text-[10px] font-black uppercase">{msg}</div>}
+                    
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-white p-6 rounded-[32px] shadow-xl border gap-4">
+                        <div className="flex-1">
+                            <h2 className="text-xl font-bold text-brand-dark">Gestão</h2>
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                {currentUser.role === 'ADMIN' ? 'Controle Geral' : `Gestão de ${currentUser.team}`}
+                            </p>
+                        </div>
+                        
+                        <div className="flex flex-wrap items-center gap-3">
+                            {currentUser.role === 'ADMIN' && (
+                                <button onClick={() => setShowTeamForm(true)} className="border-2 border-brand-dark text-brand-dark px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all">Config. Times</button>
+                            )}
+                            <div className="flex items-center bg-gray-50 px-3 py-2 rounded-xl border border-gray-100">
+                                <span className="text-[8px] font-black uppercase text-gray-400 mr-3">Exibir:</span>
+                                <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)} className="bg-transparent text-[9px] font-black uppercase outline-none">
+                                    <option value="ALL">Todos</option>
+                                    {teams.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                            {currentUser.role === 'ADMIN' && (
+                                <button onClick={() => setShowUserForm(true)} className="bg-brand-dark text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">+ Novo Membro</button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-[32px] shadow-xl border overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-gray-50 border-b">
+                                    <tr className="text-[10px] font-black uppercase text-gray-400">
+                                        <th className="px-6 py-4 text-left">Membro</th>
+                                        <th className="px-6 py-4 text-left">Equipe / Nível</th>
+                                        <th className="px-6 py-4 text-center">Saldo Atual</th>
+                                        <th className="px-6 py-4 text-right">Controles</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {filteredUsers.map(u => {
+                                        const balance = calculateBalance(u.email);
+                                        return (
+                                            <tr key={u.email} className="hover:bg-gray-50 transition-colors">
+                                                <td className="px-6 py-5">
+                                                    <p className="font-bold text-brand-dark">{u.name}</p>
+                                                    <p className="text-[9px] text-gray-400">{u.email}</p>
+                                                </td>
+                                                <td className="px-6 py-5">
+                                                    <div className="flex flex-col gap-1">
+                                                        {currentUser.role === 'ADMIN' ? (
+                                                            <select value={u.team} onChange={e => handleUpdateUser(u.email, { team: e.target.value })} className="text-[8px] font-black uppercase bg-gray-100 px-2 py-1 rounded outline-none">
+                                                                {teams.map(t => <option key={t} value={t}>{t}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <span className="text-[8px] font-black uppercase bg-gray-100 px-2 py-1 rounded text-gray-600 w-fit">{u.team}</span>
+                                                        )}
+                                                        <span className="text-[8px] font-black uppercase text-blue-500">{u.role}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-5 text-center">
+                                                    <div className={`text-sm font-black ${balance >= 0 ? 'text-green-500' : 'text-red-500'}`}>{balance > 0 ? '+' : ''}{balance.toFixed(1)}h</div>
+                                                    <div className="flex items-center justify-center mt-1">
+                                                        <span className="text-[8px] font-black text-gray-300 mr-2 uppercase">Ajuste (h):</span>
+                                                        <input type="number" value={u.adjustment} onChange={e => handleUpdateUser(u.email, { adjustment: e.target.value })} className="w-12 border rounded px-1 py-0.5 text-[10px] font-bold text-center" />
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-5 text-right space-x-3">
+                                                    <button onClick={() => handleUpdateUser(u.email, { password: '123', needsPasswordChange: true })} className="text-[8px] font-black uppercase text-gray-400 hover:text-brand-dark">Reset</button>
+                                                    {currentUser.role === 'ADMIN' && u.email !== currentUser.email && (
+                                                        <button onClick={() => handleRemoveUser(u.email)} className="text-[8px] font-black uppercase text-red-300 hover:text-red-500">Excluir</button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                     </div>
+
+                    {/* Modal Cadastro Usuário */}
+                    {showUserForm && (
+                        <div className="fixed inset-0 bg-brand-dark/90 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                            <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl p-8 animate-fade-in">
+                                <h3 className="text-xl font-bold text-brand-dark mb-6 uppercase tracking-tight">Cadastrar Membro</h3>
+                                <div className="space-y-4">
+                                    <input type="text" placeholder="Nome Completo" value={newUser.name} onChange={e=>setNewUser({...newUser, name: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 outline-none focus:border-brand-light" />
+                                    <input type="text" placeholder="E-mail (prefixo)" value={newUser.email} onChange={e=>setNewUser({...newUser, email: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 outline-none focus:border-brand-light" />
+                                    <select value={newUser.team} onChange={e=>setNewUser({...newUser, team: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 outline-none focus:border-brand-light">
+                                        {teams.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                    <select value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 outline-none focus:border-brand-light">
+                                        <option value="COLABORADOR">Colaborador</option>
+                                        <option value="GESTOR">Gestor</option>
+                                        <option value="ADMIN">Administrador</option>
+                                    </select>
+                                    <div className="flex gap-3 pt-4">
+                                        <button onClick={()=>setShowUserForm(false)} className="flex-1 border-2 border-gray-100 py-3 rounded-xl text-[10px] font-black uppercase text-gray-400">Cancelar</button>
+                                        <button onClick={handleAddUser} className="flex-[2] bg-brand-dark text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-widest">Salvar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal Gerenciar Times */}
+                    {showTeamForm && (
+                        <div className="fixed inset-0 bg-brand-dark/90 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                            <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl p-8 animate-fade-in">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-xl font-bold text-brand-dark uppercase tracking-tight">Gerenciar Times</h3>
+                                    <button onClick={() => setShowTeamForm(false)} className="text-gray-400">✕</button>
+                                </div>
+                                <div className="flex gap-2 mb-6">
+                                    <input type="text" placeholder="Novo time..." value={newTeamName} onChange={e=>setNewTeamName(e.target.value)} className="flex-1 border-2 border-gray-100 rounded-xl px-4 py-2 outline-none focus:border-brand-light text-sm" />
+                                    <button onClick={handleAddTeam} className="bg-brand-light text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase">Add</button>
+                                </div>
+                                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                    {teams.map(t => (
+                                        <div key={t} className="flex justify-between items-center bg-gray-50 px-4 py-3 rounded-xl border">
+                                            <span className="text-xs font-bold text-brand-dark uppercase">{t}</span>
+                                            {!DEFAULT_TEAMS.includes(t) && (
+                                                <button onClick={() => handleRemoveTeam(t)} className="text-red-400 text-[10px] font-black hover:text-red-600">Remover</button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={()=>setShowTeamForm(false)} className="w-full mt-6 bg-brand-dark text-white py-3 rounded-xl text-[10px] font-black uppercase">Fechar</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
